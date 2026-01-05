@@ -1,5 +1,5 @@
 import { GetFolderContentsResponse } from "./interfaces/folders/get-contents"
-import { GetFolderInfo } from "./interfaces/folders/get-folder-info"
+import { GetFolderInfo } from "./interfaces/folders/get-info"
 import { OrderDirection } from "./enums/order-direction"
 import { ContentType } from "./enums/content-type"
 import { OrderBy } from "./enums/order-by"
@@ -7,6 +7,7 @@ import { Details } from "./enums/details"
 import { Mediafire } from "./mediafire"
 import { MediafireError } from "./error"
 import { rootFolderKey } from "./utils"
+import { CreateFolderResponse } from "./interfaces/folders/create"
 
 export type GetFolderInfoOptions = {
     folderKey: string
@@ -31,6 +32,19 @@ export type GetInfoByPathOptions = {
 export type GetFolderContentsByPathOptions = Omit<GetFolderContentOptions &  {
     folderPath: string
 }, "folderKey">
+
+export type CreateOptions = {
+    name: string
+    parentKey?: string
+}
+
+export type CreateByPathOptions = {
+    folderPath: string
+}
+
+export type EnsureAndGetInfoByPathOptions = {
+    folderPath: string
+}
 
 export class FoldersService {
     constructor(private readonly mediafire: Mediafire) { }
@@ -112,5 +126,64 @@ export class FoldersService {
             folderKey: info.folder_info.folderkey,
             ...options
         })
+    }
+
+    async create({ name, parentKey = rootFolderKey }: CreateOptions) {
+        const action = "folder/create"
+
+        const data = await this.mediafire.request<CreateFolderResponse>(action, {
+            foldername: name,
+            parent_key: parentKey,
+        })
+
+        return data.response
+    }
+
+    async createByPath({ folderPath }: CreateByPathOptions) {
+        const parts = folderPath.split(/[\\/]/).filter(part => part.length > 0)
+        let currentFolderKey = rootFolderKey
+        let lastCreatedFolder: CreateFolderResponse["response"] | null = null
+
+        for (const partName of parts) {
+            const folderContents = await this.getContents({
+                folderKey: currentFolderKey,
+                contentType: ContentType.Folders
+            })
+
+            const existingFolder = folderContents.folder_content.folders?.find(
+                folder => folder.name === partName
+            )
+
+            if (existingFolder) {
+                currentFolderKey = existingFolder.folderkey
+            } else {
+                const newFolder = await this.create({ 
+                    name: partName, 
+                    parentKey: currentFolderKey 
+                })
+
+                currentFolderKey = newFolder.folder_key
+                lastCreatedFolder = newFolder
+            }
+        }
+
+        if (!lastCreatedFolder) {
+            throw new MediafireError(`The folder at the specified "${folderPath}" path already existed!`)
+        }
+
+        return lastCreatedFolder
+    }
+
+    async ensureAndGetInfoByPath({ folderPath }: EnsureAndGetInfoByPathOptions) {
+        try {
+            return await this.getInfoByPath({ folderPath })
+        } catch (error) {
+            if (error instanceof MediafireError && error.message.includes("not found")) {
+                const { folder_key } = await this.createByPath({ folderPath })
+                return await this.getInfo({ folderKey: folder_key })
+            }
+            
+            throw error
+        }
     }
 }

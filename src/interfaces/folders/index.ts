@@ -1,2 +1,2 @@
 export * from "./get-contents"
-export * from "./get-folder-info"
+export * from "./get-info"

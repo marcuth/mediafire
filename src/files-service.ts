@@ -117,7 +117,7 @@ export class FilesService {
         const parts = path.parse(filePath)
         const dirPath = parts.dir
         const fileName = parts.base
-        const folderInfo = await this.mediafire.folders.getInfoByPath({ folderPath: dirPath })
+        const folderInfo = await this.mediafire.folders.ensureAndGetInfoByPath({ folderPath: dirPath })
         const folderKey = folderInfo.folder_info.folderkey
 
         return await this.upload({
@@ -130,6 +130,7 @@ export class FilesService {
 
     async move({ quickKey, folderKey }: MoveFileOptions) {
         const action = "file/move"
+
         return await this.mediafire.request<any>(action, {
             quick_key: quickKey,
             folder_key: folderKey
